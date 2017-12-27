@@ -76,6 +76,18 @@ DECLARE_GLOBAL_DATA_PTR;
 
 #define VAR_SOM_BACKLIGHT_EN	IMX_GPIO_NR(4, 30)
 
+/*
+ * DRMC GPIO Initialization
+ */
+
+//DRMC LVDS Display control
+#define DRMC_VAR_SOM_DISP_PWR_CTRL	IMX_GPIO_NR(6, 0)
+#define DRMC_VAR_SOM_DISP_BL_CONTROL	IMX_GPIO_NR(6, 1)
+
+//DRMC LED control
+#define DRMC_VAR_SOM_LED_1		IMX_GPIO_NR(5, 15)
+#define DRMC_VAR_SOM_LED_2		IMX_GPIO_NR(5, 16)
+
 bool lvds_enabled=false;
 
 /*
@@ -105,6 +117,22 @@ static bool is_solo_custom_board(void)
 	i2c_set_bus_num(1);
 	/* Probing for extra EEPROM present only on SOLOCustomBoard */
 	ret = (0 == i2c_probe(0x51));
+
+	i2c_set_bus_num(oldbus);
+	return ret;
+}
+
+/*
+ * Returns true if the carrier board is DRMC
+ */
+static bool is_drmc_board(void)
+{
+	bool ret;
+	int oldbus = i2c_get_bus_num();
+	
+	i2c_set_bus_num(0);
+	/* Probing for extra EEPROM present only on DRMC Board*/
+	ret = (0 == i2c_probe(0x50));
 
 	i2c_set_bus_num(oldbus);
 	return ret;
@@ -141,6 +169,7 @@ enum current_board {
 	DART_BOARD,
 	SOLO_CUSTOM_BOARD,
 	MX6_CUSTOM_BOARD,
+	DRMC_BOARD,
 };
 
 static enum current_board get_board_indx(void)
@@ -149,6 +178,8 @@ static enum current_board get_board_indx(void)
 		return DART_BOARD;
 	if (is_solo_custom_board())
 		return SOLO_CUSTOM_BOARD;
+	if (is_drmc_board())
+		return DRMC_BOARD;
 	if (is_mx6_custom_board())
 		return MX6_CUSTOM_BOARD;
 
@@ -772,9 +803,34 @@ static int detect_mx6cb_rdisplay(struct display_info_t const *dev)
 	return (0 != i2c_probe(MX6CB_CDISPLAY_I2C_ADDR));
 }
 
+static int detect_drmc_board(struct display_info_t const *dev)
+{
+	return (is_drmc_board());
+}
+
 #define MHZ2PS(f)	(1000000/(f))
 
 struct display_info_t const displays[] = {{
+	.bus	= -1,
+	.addr	= 0,
+	.pixfmt	= IPU_PIX_FMT_RGB24,
+	.detect	= detect_drmc_board,
+	.enable	= lvds_enable_disable,
+	.mode	= {
+		.name           = "DRMC-FHD",
+		.refresh        = 60,  /* optional */
+		.xres           = 1920,
+		.yres           = 1080,
+		.pixclock       = 13468,
+		.left_margin    = 328,
+		.right_margin   = 128,
+		.upper_margin   = 32,
+		.lower_margin   = 3,
+		.hsync_len      = 200,
+		.vsync_len      = 5,
+		.sync           = FB_SYNC_EXT,
+		.vmode          = FB_VMODE_NONINTERLACED
+} },{
 	.bus	= -1,
 	.addr	= 0,
 	.pixfmt	= IPU_PIX_FMT_RGB24,
@@ -1079,7 +1135,7 @@ int board_init(void)
 	/* 'usb_otg_id' pin iomux select control */
 	if (board == DART_BOARD)
 		imx_iomux_set_gpr_register(1, 13, 1, 0);
-	else if (board == SOLO_CUSTOM_BOARD)
+	else if (board == SOLO_CUSTOM_BOARD || board == DRMC_BOARD)
 		imx_iomux_set_gpr_register(1, 13, 1, 1);
 #endif
 	return 0;
@@ -1323,6 +1379,8 @@ int board_late_init(void)
 		setenv("board_name", "DT6CUSTOM");
 	else if (is_solo_custom_board())
 		setenv("board_name", "SOLOCUSTOM");
+	else if(is_drmc_board())
+		setenv("board_name", "DRMC");
 	else
 		setenv("board_name", "MX6CUSTOM");
 
@@ -1346,7 +1404,10 @@ int board_late_init(void)
 
 int checkboard(void)
 {
-	puts("Board: Variscite ");
+	if(is_drmc_board())
+		puts("Board: Dragontech DRMC - ");
+	else
+		puts("Board: Variscite ");
 
 	if (is_som_solo())
 		puts("VAR-SOM-SOLO\n");
